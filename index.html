@@ -141,6 +141,7 @@
         #map {
             width: 100%; height: 100%;
             position: absolute; top: 0; left: 0; z-index: 1;
+            background-color: #aad3df; /* 兜底背景色（海洋蓝），防止网格黑屏或纯白 */
         }
 
         .custom-pin {
@@ -286,7 +287,7 @@
     <script>
         // 1. 全局状态控制
         let currentUser = localStorage.getItem('trpg_current_user') || "";
-        let editingId = null; // 当前正在编辑的 Marker ID
+        let editingId = null;
         let selectedLatLng = null;
         let currentAvatarBase64 = "";
         let markersData = [];
@@ -311,25 +312,25 @@
         const cancelEditBtn = document.getElementById('cancel-edit-btn');
         const pcListContainer = document.getElementById('pc-list');
 
-        // 2. 初始化地图（高清补丁 + 限制层级）
+        // 2. 初始化地图（修复核心：允许放大的最大视图为 10，但保留原始瓦片最高只取到 6，防止放大发白缺失）
         const map = L.map('map', {
             minZoom: 2,
-            maxZoom: 6
+            maxZoom: 10
         }).setView([35.0, 105.0], 4);
 
-        // 使用高清地图瓦片配置 (detectRetina & zoomOffset 提升清晰度)
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             minZoom: 2,
-            maxZoom: 6,
+            maxZoom: 10,        // 允许地图最大可拉近放大的视图层级
+            maxNativeZoom: 6,   // 关键：告诉 Leaflet 瓦片图片最多只下载第 6 级，再放大直接拉伸图片而不会请求空图导致白屏！
             detectRetina: true,
-            zoomOffset: 0,
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
 
-        // 创建聚合点图层 (解决重叠与缩小地图时的数量合并问题)
+        // 创建聚合点图层（解决重叠与自动散开）
         const clusterGroup = L.markerClusterGroup({
-            maxClusterRadius: 40, // 聚合像素半径
-            spiderfyOnMaxZoom: true, // 放大到最大层级后点击聚合圈散开
+            maxClusterRadius: 35,
+            spiderfyOnMaxZoom: true,       // 到达最大放大层级时，点击多个同地点重叠标记会自动蛛网散开
+            disableClusteringAtZoom: 7,   // 到达 7 级放大后停止聚合，全部展现独立小点
             showCoverageOnHover: false
         });
         map.addLayer(clusterGroup);
@@ -366,7 +367,7 @@
             saveAndRender();
         }
 
-        // 5. 侧边栏动画与渲染修复
+        // 5. 侧边栏折叠与平滑重繪
         toggleBtn.addEventListener('click', () => {
             sidebarContainer.classList.toggle('collapsed');
             const isCollapsed = sidebarContainer.classList.contains('collapsed');
@@ -406,14 +407,14 @@
             reader.readAsDataURL(file);
         });
 
-        // 地图点击
+        // 地图点击获取坐标
         map.on('click', function(e) {
             selectedLatLng = e.latlng;
             latlngInput.value = `${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`;
             presetSelect.value = "";
         });
 
-        // 预设选择
+        // 预设选择跳转
         presetSelect.addEventListener('change', function() {
             if (this.value) {
                 const [lat, lng] = this.value.split(',').map(Number);
@@ -481,7 +482,6 @@
                 localStorage.setItem(`trpg_markers_${currentUser}`, JSON.stringify(markersData));
             }
 
-            // 清空旧数据
             clusterGroup.clearLayers();
             pcListContainer.innerHTML = '';
 
@@ -490,7 +490,7 @@
             markersData.forEach(data => {
                 const avatarSrc = data.avatar || defaultAvatar;
 
-                // 地图 Marker 渲染
+                // Marker 图标渲染
                 const customIcon = L.divIcon({
                     className: '',
                     html: `<div class="custom-pin" style="background-color: ${data.color};"></div>`,
@@ -512,7 +512,7 @@
                 marker.bindPopup(popupContent);
                 clusterGroup.addLayer(marker);
 
-                // 侧边栏列表生成
+                // 侧边栏列表项目生成
                 const item = document.createElement('div');
                 item.className = 'pc-item';
                 item.style.borderLeftColor = data.color;
@@ -528,10 +528,9 @@
                     </div>
                 `;
                 
-                // 点击列表跳转地图
+                // 点击卡片平滑跳转到 Marker，若有重叠聚合点会自动展开放大
                 item.addEventListener('click', (e) => {
                     if (!e.target.tagName.matches('BUTTON')) {
-                        map.flyTo([data.lat, data.lng], 5);
                         clusterGroup.zoomToShowLayer(marker, () => {
                             marker.openPopup();
                         });
@@ -542,7 +541,7 @@
             });
         }
 
-        // 8. 编辑功能实现
+        // 8. 编辑功能
         window.editMarker = function(id, e) {
             if (e) e.stopPropagation();
             const data = markersData.find(m => m.id === id);
@@ -571,7 +570,7 @@
             }
         };
 
-        // 页面初始化触发认证检查
+        // 初始化验证
         checkAuth();
     </script>
 </body>

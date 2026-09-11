@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>跑团 PC 出身地标记地图</title> <!-- 引入 Leaflet 地图样式 -->
+    <title>跑团 PC 出身地标记地图</title>
+    <!-- 引入 Leaflet 地图样式 -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         * {
@@ -16,8 +17,24 @@
             display: flex;
             height: 100vh;
             overflow: hidden;
+            position: relative;
         }
-        /* 左侧控制面板 */
+
+        /* 侧边栏容器（含折叠动画） */
+        #sidebar-container {
+            position: relative;
+            z-index: 1000;
+            display: flex;
+            height: 100%;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        /* 侧边栏收起时的类 */
+        #sidebar-container.collapsed {
+            transform: translateX(-320px);
+        }
+
+        /* 主侧边栏 */
         #sidebar {
             width: 320px;
             background-color: #f8f9fa;
@@ -25,19 +42,41 @@
             padding: 20px;
             display: flex;
             flex-direction: column;
-            gap: 15px;
-            z-index: 1000;
+            gap: 12px;
             box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            overflow-y: auto;
         }
+
+        /* 折叠/展开按钮 */
+        #toggle-btn {
+            position: absolute;
+            right: -32px;
+            top: 15px;
+            width: 32px;
+            height: 40px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-left: none;
+            border-radius: 0 6px 6px 0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            color: #495057;
+            box-shadow: 3px 0 5px rgba(0,0,0,0.1);
+            z-index: 1001;
+        }
+
         h2 {
             font-size: 1.2rem;
             color: #333;
-            margin-bottom: 5px;
+            margin-bottom: 2px;
         }
         .form-group {
             display: flex;
             flex-direction: column;
-            gap: 5px;
+            gap: 4px;
         }
         label {
             font-size: 0.85rem;
@@ -50,15 +89,20 @@
             border-radius: 4px;
             font-size: 0.9rem;
         }
-        button {
+        input[type="file"] {
+            padding: 4px;
+            background: #fff;
+        }
+        button.primary-btn {
             background-color: #007bff;
             color: white;
             border: none;
             cursor: pointer;
             font-weight: bold;
             transition: background 0.2s;
+            margin-top: 5px;
         }
-        button:hover {
+        button.primary-btn:hover {
             background-color: #0056b3;
         }
         .hint {
@@ -69,19 +113,23 @@
             padding: 8px;
             border-radius: 4px;
         }
+
         /* 地图区域 */
         #map {
             flex: 1;
             height: 100%;
         }
-        /* 自定义标记点样式 */
+
+        /* 自定义地图标记样式 */
         .custom-pin {
-            width: 14px;
-            height: 14px;
+            width: 16px;
+            height: 16px;
             border-radius: 50%;
             border: 2px solid #fff;
             box-shadow: 0 0 4px rgba(0,0,0,0.5);
         }
+
+        /* 列表区域 */
         .pc-list {
             flex: 1;
             overflow-y: auto;
@@ -95,104 +143,165 @@
             border-radius: 4px;
             border-left: 4px solid #007bff;
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            gap: 10px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            cursor: pointer;
+        }
+        .pc-item-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 1px solid #ddd;
+            background: #f0f0f0;
+            flex-shrink: 0;
+        }
+        .pc-item-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .pc-item-info strong {
+            display: block;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         .pc-item button {
             background: #dc3545;
-            padding: 2px 6px;
+            color: white;
+            border: none;
+            padding: 3px 6px;
             font-size: 0.75rem;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+
+        /* 地图弹窗样式 */
+        .popup-card {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            min-width: 180px;
+        }
+        .popup-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 6px;
+            object-fit: cover;
+            border: 1px solid #ccc;
+        }
+        .popup-details {
+            flex: 1;
         }
     </style>
 </head>
 <body>
 
-    <div id="sidebar">
-        <h2>🎲 PC 出身地标记</h2>
-        <div class="hint">
-            💡 提示：可以在下方选择预设省会/国家，也可以直接在地图上**点击任意位置**生成坐标。
+    <div id="sidebar-container">
+        <div id="sidebar">
+            <h2>🎲 PC 出身地标记</h2>
+            <div class="hint">
+                💡 点击地图或选择预设填入坐标，支持上传个人头像。（地图最高仅放缩至省级）
+            </div>
+
+            <div class="form-group">
+                <label for="preset-select">快速选择省会/国家：</label>
+                <select id="preset-select">
+                    <option value="">-- 请选择 --</option>
+                    <optgroup label="中国省会/直辖市">
+                        <option value="39.9042,116.4074">北京</option>
+                        <option value="31.2304,121.4737">上海</option>
+                        <option value="23.1291,113.2644">广州 (广东)</option>
+                        <option value="30.5728,104.0668">成都 (四川)</option>
+                        <option value="30.2741,120.1551">杭州 (浙江)</option>
+                        <option value="32.0603,118.7969">南京 (江苏)</option>
+                        <option value="30.5928,114.3055">武汉 (湖北)</option>
+                        <option value="34.3416,108.9398">西安 (陕西)</option>
+                        <option value="25.0330,121.5654">台北 (台湾)</option>
+                        <option value="22.3193,114.1694">香港</option>
+                    </optgroup>
+                    <optgroup label="国外主要城市/首都">
+                        <option value="35.6762,139.6503">东京 (日本)</option>
+                        <option value="37.5665,126.9780">首尔 (韩国)</option>
+                        <option value="51.5074,-0.1278">伦敦 (英国)</option>
+                        <option value="48.8566,2.3522">巴黎 (法国)</option>
+                        <option value="38.9072,-77.0369">华盛顿 (美国)</option>
+                        <option value="-33.8688,151.2093">悉尼 (澳大利亚)</option>
+                    </optgroup>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="latlng-input">经纬度坐标：</label>
+                <input type="text" id="latlng-input" placeholder="点击地图或选择预设填充" readonly>
+            </div>
+
+            <div class="form-group">
+                <label for="pc-avatar">PC 头像：</label>
+                <input type="file" id="pc-avatar" accept="image/*">
+            </div>
+
+            <div class="form-group">
+                <label for="pc-name">PC 角色姓名：</label>
+                <input type="text" id="pc-name" placeholder="例如：埃尔温">
+            </div>
+
+            <div class="form-group">
+                <label for="player-name">玩家 (PL) 名字：</label>
+                <input type="text" id="player-name" placeholder="例如：阿杰">
+            </div>
+
+            <div class="form-group">
+                <label for="pc-desc">出身背景/备注：</label>
+                <textarea id="pc-desc" rows="2" placeholder="例如：来自冬木市..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="pin-color">标记颜色：</label>
+                <input type="color" id="pin-color" value="#ff4757" style="height: 35px; padding: 2px;">
+            </div>
+
+            <button class="primary-btn" id="add-btn">添加标记</button>
+
+            <h3 style="font-size: 1rem; margin-top: 5px;">已标注列表</h3>
+            <div class="pc-list" id="pc-list"></div>
         </div>
 
-        <div class="form-group">
-            <label for="preset-select">快速选择省会/国家：</label>
-            <select id="preset-select">
-                <option value="">-- 请选择 --</option>
-                <optgroup label="中国省会/直辖市">
-                    <option value="39.9042,116.4074">北京</option>
-                    <option value="31.2304,121.4737">上海</option>
-                    <option value="23.1291,113.2644">广州 (广东)</option>
-                    <option value="30.5728,104.0668">成都 (四川)</option>
-                    <option value="30.2741,120.1551">杭州 (浙江)</option>
-                    <option value="32.0603,118.7969">南京 (江苏)</option>
-                    <option value="30.5928,114.3055">武汉 (湖北)</option>
-                    <option value="34.3416,108.9398">西安 (陕西)</option>
-                    <option value="25.0330,121.5654">台北 (台湾)</option>
-                    <option value="22.3193,114.1694">香港</option>
-                </optgroup>
-                <optgroup label="国外主要城市/首都">
-                    <option value="35.6762,139.6503">东京 (日本)</option>
-                    <option value="37.5665,126.9780">首尔 (韩国)</option>
-                    <option value="51.5074,-0.1278">伦敦 (英国)</option>
-                    <option value="48.8566,2.3522">巴黎 (法国)</option>
-                    <option value="38.9072,-77.0369">华盛顿 (美国)</option>
-                    <option value="-33.8688,151.2093">悉尼 (澳大利亚)</option>
-                </optgroup>
-            </select>
-        </div>
-
-        <div class="form-group">
-            <label for="latlng-input">经纬度坐标：</label>
-            <input type="text" id="latlng-input" placeholder="点击地图或选择预设填充" readonly>
-        </div>
-
-        <div class="form-group">
-            <label for="pc-name">PC 角色姓名：</label>
-            <input type="text" id="pc-name" placeholder="例如：埃尔温 / 张三">
-        </div>
-
-        <div class="form-group">
-            <label for="player-name">玩家 (PL) 名字：</label>
-            <input type="text" id="player-name" placeholder="例如：阿杰">
-        </div>
-
-        <div class="form-group">
-            <label for="pc-desc">出身背景/备注：</label>
-            <textarea id="pc-desc" rows="2" placeholder="例如：来自冬木市的魔法使..."></textarea>
-        </div>
-
-        <div class="form-group">
-            <label for="pin-color">标记颜色：</label>
-            <input type="color" id="pin-color" value="#ff4757" style="height: 40px; padding: 2px;">
-        </div>
-
-        <button id="add-btn">添加标记</button>
-
-        <h3>已标注列表</h3>
-        <div class="pc-list" id="pc-list"></div>
+        <!-- 侧边栏折叠按钮 -->
+        <button id="toggle-btn" title="收起/展开侧边栏">◀</button>
     </div>
 
     <div id="map"></div>
 
-    <!-- 引入 Leaflet JS 地图库 -->
+    <!-- 引入 Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // 1. 初始化地图（默认中心设在中国）
-        const map = L.map('map').setView([35.0, 105.0], 4);
+        // 1. 初始化地图，限制最小层级 minZoom 与最大放大层级 maxZoom
+        // minZoom: 2 (看全图), maxZoom: 6 (最多放大到省/国家层级，无法看到街道/市区)
+        const map = L.map('map', {
+            minZoom: 2,
+            maxZoom: 6
+        }).setView([35.0, 105.0], 4);
 
-        // 2. 加载 OpenStreetMap 地图图层
+        // 2. 加载地图图层（设置 maxZoom 为 6 阻止加载街道级切片）
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 18,
+            minZoom: 2,
+            maxZoom: 6,
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
 
         let selectedLatLng = null;
+        let currentAvatarBase64 = "";
         let markersData = JSON.parse(localStorage.getItem('trpg_pc_markers') || '[]');
         let markerInstances = [];
 
-        // UI 元素引用
+        // DOM 引用
+        const sidebarContainer = document.getElementById('sidebar-container');
+        const toggleBtn = document.getElementById('toggle-btn');
         const latlngInput = document.getElementById('latlng-input');
         const presetSelect = document.getElementById('preset-select');
+        const pcAvatarInput = document.getElementById('pc-avatar');
         const pcNameInput = document.getElementById('pc-name');
         const playerNameInput = document.getElementById('player-name');
         const pcDescInput = document.getElementById('pc-desc');
@@ -200,32 +309,70 @@
         const addBtn = document.getElementById('add-btn');
         const pcListContainer = document.getElementById('pc-list');
 
-        // 3. 点击地图获取经纬度
+        // 3. 侧边栏折叠
+        toggleBtn.addEventListener('click', () => {
+            sidebarContainer.classList.toggle('collapsed');
+            const isCollapsed = sidebarContainer.classList.contains('collapsed');
+            toggleBtn.innerText = isCollapsed ? '▶' : '◀';
+            setTimeout(() => { map.invalidateSize(); }, 300);
+        });
+
+        // 4. 图片 Base64 压缩处理
+        pcAvatarInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    const max_size = 120;
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > height) {
+                        if (width > max_size) { height *= max_size / width; width = max_size; }
+                    } else {
+                        if (height > max_size) { width *= max_size / height; height = max_size; }
+                    }
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    currentAvatarBase64 = canvas.toDataURL('image/jpeg', 0.8);
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // 5. 点击地图获取坐标
         map.on('click', function(e) {
             selectedLatLng = e.latlng;
             latlngInput.value = `${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`;
-            presetSelect.value = ""; // 清空下拉框
+            presetSelect.value = "";
         });
 
-        // 4. 下拉框选择预设位置
+        // 6. 预设选择（跳转限制在最高 level 5，显示省级范围）
         presetSelect.addEventListener('change', function() {
             if (this.value) {
                 const [lat, lng] = this.value.split(',').map(Number);
                 selectedLatLng = { lat, lng };
                 latlngInput.value = `${lat}, ${lng}`;
-                map.flyTo([lat, lng], 6); // 飞跃定位到该点
+                map.flyTo([lat, lng], 5);
             }
         });
 
-        // 5. 添加新标记
+        // 7. 添加标记
         addBtn.addEventListener('click', function() {
             if (!selectedLatLng) {
-                alert('请先在地图上点击选择位置，或在下拉菜单中选择预设！');
+                alert('请先在地图上点击位置，或选择预设！');
                 return;
             }
             const pcName = pcNameInput.value.trim();
             if (!pcName) {
-                alert('请输入角色姓名！');
+                alert('请输入 PC 角色姓名！');
                 return;
             }
 
@@ -236,67 +383,74 @@
                 pcName: pcName,
                 playerName: playerNameInput.value.trim() || '未知玩家',
                 desc: pcDescInput.value.trim(),
-                color: pinColorInput.value
+                color: pinColorInput.value,
+                avatar: currentAvatarBase64
             };
 
             markersData.push(markerData);
             saveAndRender();
 
-            // 清空表单
+            // 重置表单
             pcNameInput.value = '';
             pcDescInput.value = '';
+            pcAvatarInput.value = '';
+            currentAvatarBase64 = '';
         });
 
-        // 6. 保存并渲染所有标记
+        // 8. 渲染与本地保存
         function saveAndRender() {
-            // 保存到 LocalStorage
-            localStorage.setItem('trpg_pc_markers', JSON.stringify(markersData));
+            try {
+                localStorage.setItem('trpg_pc_markers', JSON.stringify(markersData));
+            } catch (e) {
+                alert("存储受限：上传图片过多，请清空部分标注后再试。");
+            }
 
-            // 清除原有地图上的 Marker
             markerInstances.forEach(m => map.removeLayer(m));
             markerInstances = [];
-
-            // 清空列表 HTML
             pcListContainer.innerHTML = '';
 
-            // 重新绘制
             markersData.forEach(data => {
-                // 自定义 Marker 图标 (圆形标记)
                 const customIcon = L.divIcon({
                     className: '',
                     html: `<div class="custom-pin" style="background-color: ${data.color};"></div>`,
-                    iconSize: [14, 14],
-                    iconAnchor: [7, 7]
+                    iconSize: [16, 16],
+                    iconAnchor: [8, 8]
                 });
 
-                // 创建 Marker
                 const marker = L.marker([data.lat, data.lng], { icon: customIcon }).addTo(map);
                 
-                // 弹窗内容
+                const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24' fill='%23ccc'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
+                const avatarSrc = data.avatar || defaultAvatar;
+
                 const popupContent = `
-                    <div style="font-size: 14px;">
-                        <strong style="font-size:16px; color:${data.color};">${data.pcName}</strong><br>
-                        <b>PL:</b> ${data.playerName}<br>
-                        ${data.desc ? `<b>背景:</b> ${data.desc}` : ''}
+                    <div class="popup-card">
+                        <img class="popup-avatar" src="${avatarSrc}" alt="Avatar">
+                        <div class="popup-details">
+                            <strong style="font-size:15px; color:${data.color};">${data.pcName}</strong><br>
+                            <small><b>PL:</b> ${data.playerName}</small><br>
+                            ${data.desc ? `<small><b>背景:</b> ${data.desc}</small>` : ''}
+                        </div>
                     </div>
                 `;
                 marker.bindPopup(popupContent);
                 markerInstances.push(marker);
 
-                // 生成侧边栏列表项
                 const item = document.createElement('div');
                 item.className = 'pc-item';
                 item.style.borderLeftColor = data.color;
                 item.innerHTML = `
-                    <div>
-                        <strong>${data.pcName}</strong> (${data.playerName})
+                    <img class="pc-item-avatar" src="${avatarSrc}" alt="avatar">
+                    <div class="pc-item-info">
+                        <strong>${data.pcName}</strong>
+                        <small style="color:#666;">PL: ${data.playerName}</small>
                     </div>
                     <button onclick="deleteMarker(${data.id})">删除</button>
                 `;
-                // 点击列表项缩放到地图指定点
+                
+                // 点击列表项平滑飞行到该点（定位层级最大为 5）
                 item.addEventListener('click', (e) => {
                     if(e.target.tagName !== 'BUTTON') {
-                        map.flyTo([data.lat, data.lng], 8);
+                        map.flyTo([data.lat, data.lng], 5);
                         marker.openPopup();
                     }
                 });
@@ -305,13 +459,12 @@
             });
         }
 
-        // 7. 删除标记
+        // 9. 删除标记
         window.deleteMarker = function(id) {
             markersData = markersData.filter(m => m.id !== id);
             saveAndRender();
         };
 
-        // 初始化加载数据
         saveAndRender();
     </script>
 </body>

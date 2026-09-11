@@ -14,22 +14,24 @@
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            display: flex;
             height: 100vh;
+            width: 100vw;
             overflow: hidden;
             position: relative;
         }
 
-        /* 侧边栏容器（含折叠动画） */
+        /* 侧边栏容器（使用 absolute 悬浮在地图上方） */
         #sidebar-container {
-            position: relative;
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
             z-index: 1000;
             display: flex;
-            height: 100%;
             transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
         
-        /* 侧边栏收起时的类 */
+        /* 侧边栏收起 */
         #sidebar-container.collapsed {
             transform: translateX(-320px);
         }
@@ -37,6 +39,7 @@
         /* 主侧边栏 */
         #sidebar {
             width: 320px;
+            height: 100%;
             background-color: #f8f9fa;
             border-right: 1px solid #dee2e6;
             padding: 20px;
@@ -114,10 +117,14 @@
             border-radius: 4px;
         }
 
-        /* 地图区域 */
+        /* 地图区域：绝对定位占满屏幕 */
         #map {
-            flex: 1;
+            width: 100%;
             height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
         }
 
         /* 自定义地图标记样式 */
@@ -272,19 +279,19 @@
         <button id="toggle-btn" title="收起/展开侧边栏">◀</button>
     </div>
 
+    <!-- 地图容器放在平级位置，绝对定位在下方 -->
     <div id="map"></div>
 
     <!-- 引入 Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // 1. 初始化地图，限制最小层级 minZoom 与最大放大层级 maxZoom
-        // minZoom: 2 (看全图), maxZoom: 6 (最多放大到省/国家层级，无法看到街道/市区)
+        // 1. 初始化地图
         const map = L.map('map', {
             minZoom: 2,
             maxZoom: 6
         }).setView([35.0, 105.0], 4);
 
-        // 2. 加载地图图层（设置 maxZoom 为 6 阻止加载街道级切片）
+        // 2. 加载地图图层
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             minZoom: 2,
             maxZoom: 6,
@@ -309,12 +316,19 @@
         const addBtn = document.getElementById('add-btn');
         const pcListContainer = document.getElementById('pc-list');
 
-        // 3. 侧边栏折叠
+        // 3. 侧边栏折叠交互（重点修改：连续触发尺寸重算消除白屏）
         toggleBtn.addEventListener('click', () => {
             sidebarContainer.classList.toggle('collapsed');
             const isCollapsed = sidebarContainer.classList.contains('collapsed');
             toggleBtn.innerText = isCollapsed ? '▶' : '◀';
-            setTimeout(() => { map.invalidateSize(); }, 300);
+
+            // 在折叠/展开的 300ms 动画期间连续重绘，保证地图画面平滑跟随且无白块
+            let checks = 0;
+            const timer = setInterval(() => {
+                map.invalidateSize();
+                checks++;
+                if (checks > 10) clearInterval(timer);
+            }, 35);
         });
 
         // 4. 图片 Base64 压缩处理
@@ -354,7 +368,7 @@
             presetSelect.value = "";
         });
 
-        // 6. 预设选择（跳转限制在最高 level 5，显示省级范围）
+        // 6. 预设选择
         presetSelect.addEventListener('change', function() {
             if (this.value) {
                 const [lat, lng] = this.value.split(',').map(Number);
@@ -447,7 +461,6 @@
                     <button onclick="deleteMarker(${data.id})">删除</button>
                 `;
                 
-                // 点击列表项平滑飞行到该点（定位层级最大为 5）
                 item.addEventListener('click', (e) => {
                     if(e.target.tagName !== 'BUTTON') {
                         map.flyTo([data.lat, data.lng], 5);

@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>跑团 PC 出身地标记地图</title> <!-- 引入 Leaflet 地图样式 -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+        /* 左侧控制面板 */
+        #sidebar {
+            width: 320px;
+            background-color: #f8f9fa;
+            border-right: 1px solid #dee2e6;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            z-index: 1000;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+        }
+        h2 {
+            font-size: 1.2rem;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        label {
+            font-size: 0.85rem;
+            color: #666;
+            font-weight: bold;
+        }
+        input, select, textarea, button {
+            padding: 8px 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .hint {
+            font-size: 0.8rem;
+            color: #6c757d;
+            line-height: 1.4;
+            background: #e9ecef;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        /* 地图区域 */
+        #map {
+            flex: 1;
+            height: 100%;
+        }
+        /* 自定义标记点样式 */
+        .custom-pin {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            box-shadow: 0 0 4px rgba(0,0,0,0.5);
+        }
+        .pc-list {
+            flex: 1;
+            overflow-y: auto;
+            border-top: 1px solid #ddd;
+            padding-top: 10px;
+        }
+        .pc-item {
+            background: white;
+            padding: 8px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            border-left: 4px solid #007bff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .pc-item button {
+            background: #dc3545;
+            padding: 2px 6px;
+            font-size: 0.75rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <h2>🎲 PC 出身地标记</h2>
+        <div class="hint">
+            💡 提示：可以在下方选择预设省会/国家，也可以直接在地图上**点击任意位置**生成坐标。
+        </div>
+
+        <div class="form-group">
+            <label for="preset-select">快速选择省会/国家：</label>
+            <select id="preset-select">
+                <option value="">-- 请选择 --</option>
+                <optgroup label="中国省会/直辖市">
+                    <option value="39.9042,116.4074">北京</option>
+                    <option value="31.2304,121.4737">上海</option>
+                    <option value="23.1291,113.2644">广州 (广东)</option>
+                    <option value="30.5728,104.0668">成都 (四川)</option>
+                    <option value="30.2741,120.1551">杭州 (浙江)</option>
+                    <option value="32.0603,118.7969">南京 (江苏)</option>
+                    <option value="30.5928,114.3055">武汉 (湖北)</option>
+                    <option value="34.3416,108.9398">西安 (陕西)</option>
+                    <option value="25.0330,121.5654">台北 (台湾)</option>
+                    <option value="22.3193,114.1694">香港</option>
+                </optgroup>
+                <optgroup label="国外主要城市/首都">
+                    <option value="35.6762,139.6503">东京 (日本)</option>
+                    <option value="37.5665,126.9780">首尔 (韩国)</option>
+                    <option value="51.5074,-0.1278">伦敦 (英国)</option>
+                    <option value="48.8566,2.3522">巴黎 (法国)</option>
+                    <option value="38.9072,-77.0369">华盛顿 (美国)</option>
+                    <option value="-33.8688,151.2093">悉尼 (澳大利亚)</option>
+                </optgroup>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="latlng-input">经纬度坐标：</label>
+            <input type="text" id="latlng-input" placeholder="点击地图或选择预设填充" readonly>
+        </div>
+
+        <div class="form-group">
+            <label for="pc-name">PC 角色姓名：</label>
+            <input type="text" id="pc-name" placeholder="例如：埃尔温 / 张三">
+        </div>
+
+        <div class="form-group">
+            <label for="player-name">玩家 (PL) 名字：</label>
+            <input type="text" id="player-name" placeholder="例如：阿杰">
+        </div>
+
+        <div class="form-group">
+            <label for="pc-desc">出身背景/备注：</label>
+            <textarea id="pc-desc" rows="2" placeholder="例如：来自冬木市的魔法使..."></textarea>
+        </div>
+
+        <div class="form-group">
+            <label for="pin-color">标记颜色：</label>
+            <input type="color" id="pin-color" value="#ff4757" style="height: 40px; padding: 2px;">
+        </div>
+
+        <button id="add-btn">添加标记</button>
+
+        <h3>已标注列表</h3>
+        <div class="pc-list" id="pc-list"></div>
+    </div>
+
+    <div id="map"></div>
+
+    <!-- 引入 Leaflet JS 地图库 -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // 1. 初始化地图（默认中心设在中国）
+        const map = L.map('map').setView([35.0, 105.0], 4);
+
+        // 2. 加载 OpenStreetMap 地图图层
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 18,
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        let selectedLatLng = null;
+        let markersData = JSON.parse(localStorage.getItem('trpg_pc_markers') || '[]');
+        let markerInstances = [];
+
+        // UI 元素引用
+        const latlngInput = document.getElementById('latlng-input');
+        const presetSelect = document.getElementById('preset-select');
+        const pcNameInput = document.getElementById('pc-name');
+        const playerNameInput = document.getElementById('player-name');
+        const pcDescInput = document.getElementById('pc-desc');
+        const pinColorInput = document.getElementById('pin-color');
+        const addBtn = document.getElementById('add-btn');
+        const pcListContainer = document.getElementById('pc-list');
+
+        // 3. 点击地图获取经纬度
+        map.on('click', function(e) {
+            selectedLatLng = e.latlng;
+            latlngInput.value = `${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`;
+            presetSelect.value = ""; // 清空下拉框
+        });
+
+        // 4. 下拉框选择预设位置
+        presetSelect.addEventListener('change', function() {
+            if (this.value) {
+                const [lat, lng] = this.value.split(',').map(Number);
+                selectedLatLng = { lat, lng };
+                latlngInput.value = `${lat}, ${lng}`;
+                map.flyTo([lat, lng], 6); // 飞跃定位到该点
+            }
+        });
+
+        // 5. 添加新标记
+        addBtn.addEventListener('click', function() {
+            if (!selectedLatLng) {
+                alert('请先在地图上点击选择位置，或在下拉菜单中选择预设！');
+                return;
+            }
+            const pcName = pcNameInput.value.trim();
+            if (!pcName) {
+                alert('请输入角色姓名！');
+                return;
+            }
+
+            const markerData = {
+                id: Date.now(),
+                lat: selectedLatLng.lat,
+                lng: selectedLatLng.lng,
+                pcName: pcName,
+                playerName: playerNameInput.value.trim() || '未知玩家',
+                desc: pcDescInput.value.trim(),
+                color: pinColorInput.value
+            };
+
+            markersData.push(markerData);
+            saveAndRender();
+
+            // 清空表单
+            pcNameInput.value = '';
+            pcDescInput.value = '';
+        });
+
+        // 6. 保存并渲染所有标记
+        function saveAndRender() {
+            // 保存到 LocalStorage
+            localStorage.setItem('trpg_pc_markers', JSON.stringify(markersData));
+
+            // 清除原有地图上的 Marker
+            markerInstances.forEach(m => map.removeLayer(m));
+            markerInstances = [];
+
+            // 清空列表 HTML
+            pcListContainer.innerHTML = '';
+
+            // 重新绘制
+            markersData.forEach(data => {
+                // 自定义 Marker 图标 (圆形标记)
+                const customIcon = L.divIcon({
+                    className: '',
+                    html: `<div class="custom-pin" style="background-color: ${data.color};"></div>`,
+                    iconSize: [14, 14],
+                    iconAnchor: [7, 7]
+                });
+
+                // 创建 Marker
+                const marker = L.marker([data.lat, data.lng], { icon: customIcon }).addTo(map);
+                
+                // 弹窗内容
+                const popupContent = `
+                    <div style="font-size: 14px;">
+                        <strong style="font-size:16px; color:${data.color};">${data.pcName}</strong><br>
+                        <b>PL:</b> ${data.playerName}<br>
+                        ${data.desc ? `<b>背景:</b> ${data.desc}` : ''}
+                    </div>
+                `;
+                marker.bindPopup(popupContent);
+                markerInstances.push(marker);
+
+                // 生成侧边栏列表项
+                const item = document.createElement('div');
+                item.className = 'pc-item';
+                item.style.borderLeftColor = data.color;
+                item.innerHTML = `
+                    <div>
+                        <strong>${data.pcName}</strong> (${data.playerName})
+                    </div>
+                    <button onclick="deleteMarker(${data.id})">删除</button>
+                `;
+                // 点击列表项缩放到地图指定点
+                item.addEventListener('click', (e) => {
+                    if(e.target.tagName !== 'BUTTON') {
+                        map.flyTo([data.lat, data.lng], 8);
+                        marker.openPopup();
+                    }
+                });
+
+                pcListContainer.appendChild(item);
+            });
+        }
+
+        // 7. 删除标记
+        window.deleteMarker = function(id) {
+            markersData = markersData.filter(m => m.id !== id);
+            saveAndRender();
+        };
+
+        // 初始化加载数据
+        saveAndRender();
+    </script>
+</body>
+</html>

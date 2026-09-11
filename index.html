@@ -4,8 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>跑团 PC 出身地标记地图</title>
+    
     <!-- 引入 Leaflet 地图样式 -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- 引入 Leaflet MarkerCluster 聚合标记插件样式 -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+
     <style>
         * {
             box-sizing: border-box;
@@ -20,18 +25,39 @@
             position: relative;
         }
 
-        /* 侧边栏容器（使用 absolute 悬浮在地图上方） */
+        /* 登录遮罩弹窗 */
+        #login-modal {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.6);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-box {
+            background: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            width: 300px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .login-box h3 {
+            text-align: center;
+            color: #333;
+        }
+
+        /* 侧边栏容器 */
         #sidebar-container {
             position: absolute;
-            top: 0;
-            left: 0;
-            bottom: 0;
+            top: 0; left: 0; bottom: 0;
             z-index: 1000;
             display: flex;
             transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
-        
-        /* 侧边栏收起 */
         #sidebar-container.collapsed {
             transform: translateX(-320px);
         }
@@ -42,15 +68,34 @@
             height: 100%;
             background-color: #f8f9fa;
             border-right: 1px solid #dee2e6;
-            padding: 20px;
+            padding: 15px;
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 10px;
             box-shadow: 2px 0 5px rgba(0,0,0,0.1);
             overflow-y: auto;
         }
 
-        /* 折叠/展开按钮 */
+        /* 顶部用户栏 */
+        .user-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #e9ecef;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+        .user-bar button {
+            padding: 2px 6px;
+            font-size: 0.75rem;
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+
         #toggle-btn {
             position: absolute;
             right: -32px;
@@ -71,146 +116,96 @@
             z-index: 1001;
         }
 
-        h2 {
-            font-size: 1.2rem;
-            color: #333;
-            margin-bottom: 2px;
-        }
-        .form-group {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-        label {
-            font-size: 0.85rem;
-            color: #666;
-            font-weight: bold;
-        }
+        h2 { font-size: 1.1rem; color: #333; }
+        .form-group { display: flex; flex-direction: column; gap: 3px; }
+        label { font-size: 0.8rem; color: #666; font-weight: bold; }
         input, select, textarea, button {
-            padding: 8px 12px;
+            padding: 6px 10px;
             border: 1px solid #ccc;
             border-radius: 4px;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
         }
-        input[type="file"] {
-            padding: 4px;
-            background: #fff;
-        }
+        input[type="file"] { padding: 2px; background: #fff; }
+        
+        .btn-group { display: flex; gap: 8px; margin-top: 4px; }
         button.primary-btn {
-            background-color: #007bff;
-            color: white;
-            border: none;
-            cursor: pointer;
-            font-weight: bold;
-            transition: background 0.2s;
-            margin-top: 5px;
+            flex: 1; background-color: #007bff; color: white; border: none;
+            cursor: pointer; font-weight: bold; padding: 8px;
         }
-        button.primary-btn:hover {
-            background-color: #0056b3;
-        }
-        .hint {
-            font-size: 0.8rem;
-            color: #6c757d;
-            line-height: 1.4;
-            background: #e9ecef;
-            padding: 8px;
-            border-radius: 4px;
+        button.cancel-btn {
+            background-color: #6c757d; color: white; border: none;
+            cursor: pointer; padding: 8px; display: none;
         }
 
-        /* 地图区域：绝对定位占满屏幕 */
+        /* 地图区域 */
         #map {
-            width: 100%;
-            height: 100%;
-            position: absolute;
-            top: 0;
-            left: 0;
-            z-index: 1;
+            width: 100%; height: 100%;
+            position: absolute; top: 0; left: 0; z-index: 1;
         }
 
-        /* 自定义地图标记样式 */
         .custom-pin {
-            width: 16px;
-            height: 16px;
-            border-radius: 50%;
-            border: 2px solid #fff;
-            box-shadow: 0 0 4px rgba(0,0,0,0.5);
+            width: 16px; height: 16px; border-radius: 50%;
+            border: 2px solid #fff; box-shadow: 0 0 4px rgba(0,0,0,0.5);
         }
 
-        /* 列表区域 */
+        /* 侧边栏已标注列表 */
         .pc-list {
-            flex: 1;
-            overflow-y: auto;
-            border-top: 1px solid #ddd;
-            padding-top: 10px;
+            flex: 1; min-height: 150px; overflow-y: auto;
+            border-top: 1px solid #ddd; padding-top: 8px;
         }
         .pc-item {
-            background: white;
-            padding: 8px;
-            margin-bottom: 8px;
-            border-radius: 4px;
-            border-left: 4px solid #007bff;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-            cursor: pointer;
+            background: white; padding: 8px; margin-bottom: 8px;
+            border-radius: 4px; border-left: 4px solid #007bff;
+            display: flex; align-items: center; gap: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05); cursor: pointer;
         }
         .pc-item-avatar {
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 1px solid #ddd;
-            background: #f0f0f0;
-            flex-shrink: 0;
+            width: 32px; height: 32px; border-radius: 50%;
+            object-fit: cover; border: 1px solid #ddd; flex-shrink: 0;
         }
-        .pc-item-info {
-            flex: 1;
-            min-width: 0;
-        }
+        .pc-item-info { flex: 1; min-width: 0; }
         .pc-item-info strong {
-            display: block;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            display: block; font-size: 0.85rem;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
-        .pc-item button {
-            background: #dc3545;
-            color: white;
-            border: none;
-            padding: 3px 6px;
-            font-size: 0.75rem;
-            cursor: pointer;
-            border-radius: 3px;
+        .pc-item-actions { display: flex; gap: 4px; }
+        .pc-item-actions button {
+            border: none; padding: 2px 5px; font-size: 0.7rem;
+            cursor: pointer; border-radius: 3px; color: white;
         }
+        .btn-edit { background: #ffc107; color: #333 !important; }
+        .btn-del { background: #dc3545; }
 
-        /* 地图弹窗样式 */
-        .popup-card {
-            display: flex;
-            gap: 10px;
-            align-items: flex-start;
-            min-width: 180px;
-        }
-        .popup-avatar {
-            width: 50px;
-            height: 50px;
-            border-radius: 6px;
-            object-fit: cover;
-            border: 1px solid #ccc;
-        }
-        .popup-details {
-            flex: 1;
-        }
+        /* 地图 PopUp 样式 */
+        .popup-card { display: flex; gap: 8px; align-items: flex-start; min-width: 160px; }
+        .popup-avatar { width: 45px; height: 45px; border-radius: 4px; object-fit: cover; border: 1px solid #ccc; }
+        .popup-details { flex: 1; font-size: 0.8rem; }
     </style>
 </head>
 <body>
 
+    <!-- 账号登录/注册弹窗 -->
+    <div id="login-modal">
+        <div class="login-box">
+            <h3>🎲 登录 PC 地图账号</h3>
+            <div class="form-group">
+                <label>用户名：</label>
+                <input type="text" id="username-input" placeholder="输入您的唯一名称">
+            </div>
+            <button class="primary-btn" id="login-btn">进入系统</button>
+            <p style="font-size: 0.75rem; color: #888; text-align: center;">说明：不同用户名互相隔离，仅显示该账号下的 PC</p>
+        </div>
+    </div>
+
+    <!-- 侧边栏 -->
     <div id="sidebar-container">
         <div id="sidebar">
-            <h2>🎲 PC 出身地标记</h2>
-            <div class="hint">
-                💡 点击地图或选择预设填入坐标，支持上传个人头像。（地图最高仅放缩至省级）
+            <div class="user-bar">
+                <span>👤 账号：<strong id="current-user-display">-</strong></span>
+                <button id="logout-btn">退出</button>
             </div>
+
+            <h2>🎲 PC 出身地标记</h2>
 
             <div class="form-group">
                 <label for="preset-select">快速选择省会/国家：</label>
@@ -241,7 +236,7 @@
 
             <div class="form-group">
                 <label for="latlng-input">经纬度坐标：</label>
-                <input type="text" id="latlng-input" placeholder="点击地图或选择预设填充" readonly>
+                <input type="text" id="latlng-input" placeholder="点击地图或选择预设" readonly>
             </div>
 
             <div class="form-group">
@@ -266,44 +261,43 @@
 
             <div class="form-group">
                 <label for="pin-color">标记颜色：</label>
-                <input type="color" id="pin-color" value="#ff4757" style="height: 35px; padding: 2px;">
+                <input type="color" id="pin-color" value="#ff4757" style="height: 30px; padding: 1px;">
             </div>
 
-            <button class="primary-btn" id="add-btn">添加标记</button>
+            <div class="btn-group">
+                <button class="primary-btn" id="add-btn">添加标记</button>
+                <button class="cancel-btn" id="cancel-edit-btn">取消编辑</button>
+            </div>
 
-            <h3 style="font-size: 1rem; margin-top: 5px;">已标注列表</h3>
+            <h3 style="font-size: 0.95rem; margin-top: 5px;">已标注列表</h3>
             <div class="pc-list" id="pc-list"></div>
         </div>
 
-        <!-- 侧边栏折叠按钮 -->
         <button id="toggle-btn" title="收起/展开侧边栏">◀</button>
     </div>
 
-    <!-- 地图容器放在平级位置，绝对定位在下方 -->
     <div id="map"></div>
 
-    <!-- 引入 Leaflet JS -->
+    <!-- 引入 Leaflet 核心库 -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- 引入 MarkerCluster 聚合点库 -->
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
     <script>
-        // 1. 初始化地图
-        const map = L.map('map', {
-            minZoom: 2,
-            maxZoom: 6
-        }).setView([35.0, 105.0], 4);
-
-        // 2. 加载地图图层
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            minZoom: 2,
-            maxZoom: 6,
-            attribution: '&copy; OpenStreetMap contributors'
-        }).addTo(map);
-
+        // 1. 全局状态控制
+        let currentUser = localStorage.getItem('trpg_current_user') || "";
+        let editingId = null; // 当前正在编辑的 Marker ID
         let selectedLatLng = null;
         let currentAvatarBase64 = "";
-        let markersData = JSON.parse(localStorage.getItem('trpg_pc_markers') || '[]');
-        let markerInstances = [];
+        let markersData = [];
 
-        // DOM 引用
+        // DOM 元素引用
+        const loginModal = document.getElementById('login-modal');
+        const usernameInput = document.getElementById('username-input');
+        const loginBtn = document.getElementById('login-btn');
+        const logoutBtn = document.getElementById('logout-btn');
+        const currentUserDisplay = document.getElementById('current-user-display');
+        
         const sidebarContainer = document.getElementById('sidebar-container');
         const toggleBtn = document.getElementById('toggle-btn');
         const latlngInput = document.getElementById('latlng-input');
@@ -314,15 +308,70 @@
         const pcDescInput = document.getElementById('pc-desc');
         const pinColorInput = document.getElementById('pin-color');
         const addBtn = document.getElementById('add-btn');
+        const cancelEditBtn = document.getElementById('cancel-edit-btn');
         const pcListContainer = document.getElementById('pc-list');
 
-        // 3. 侧边栏折叠交互（重点修改：连续触发尺寸重算消除白屏）
+        // 2. 初始化地图（高清补丁 + 限制层级）
+        const map = L.map('map', {
+            minZoom: 2,
+            maxZoom: 6
+        }).setView([35.0, 105.0], 4);
+
+        // 使用高清地图瓦片配置 (detectRetina & zoomOffset 提升清晰度)
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            minZoom: 2,
+            maxZoom: 6,
+            detectRetina: true,
+            zoomOffset: 0,
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        // 创建聚合点图层 (解决重叠与缩小地图时的数量合并问题)
+        const clusterGroup = L.markerClusterGroup({
+            maxClusterRadius: 40, // 聚合像素半径
+            spiderfyOnMaxZoom: true, // 放大到最大层级后点击聚合圈散开
+            showCoverageOnHover: false
+        });
+        map.addLayer(clusterGroup);
+
+        // 3. 登录 / 账号隔离体系
+        function checkAuth() {
+            if (currentUser) {
+                loginModal.style.display = 'none';
+                currentUserDisplay.innerText = currentUser;
+                loadUserData();
+            } else {
+                loginModal.style.display = 'flex';
+            }
+        }
+
+        loginBtn.addEventListener('click', () => {
+            const user = usernameInput.value.trim();
+            if (!user) { alert('请输入用户名！'); return; }
+            currentUser = user;
+            localStorage.setItem('trpg_current_user', currentUser);
+            checkAuth();
+        });
+
+        logoutBtn.addEventListener('click', () => {
+            currentUser = "";
+            localStorage.removeItem('trpg_current_user');
+            checkAuth();
+        });
+
+        // 4. 读取与保存特定用户的数据
+        function loadUserData() {
+            const key = `trpg_markers_${currentUser}`;
+            markersData = JSON.parse(localStorage.getItem(key) || '[]');
+            saveAndRender();
+        }
+
+        // 5. 侧边栏动画与渲染修复
         toggleBtn.addEventListener('click', () => {
             sidebarContainer.classList.toggle('collapsed');
             const isCollapsed = sidebarContainer.classList.contains('collapsed');
             toggleBtn.innerText = isCollapsed ? '▶' : '◀';
 
-            // 在折叠/展开的 300ms 动画期间连续重绘，保证地图画面平滑跟随且无白块
             let checks = 0;
             const timer = setInterval(() => {
                 map.invalidateSize();
@@ -331,27 +380,23 @@
             }, 35);
         });
 
-        // 4. 图片 Base64 压缩处理
+        // 头像文件处理
         pcAvatarInput.addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (!file) return;
-
             const reader = new FileReader();
             reader.onload = function(event) {
                 const img = new Image();
                 img.onload = function() {
                     const canvas = document.createElement('canvas');
                     const max_size = 120;
-                    let width = img.width;
-                    let height = img.height;
-
+                    let width = img.width, height = img.height;
                     if (width > height) {
                         if (width > max_size) { height *= max_size / width; width = max_size; }
                     } else {
                         if (height > max_size) { width *= max_size / height; height = max_size; }
                     }
-                    canvas.width = width;
-                    canvas.height = height;
+                    canvas.width = width; canvas.height = height;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, width, height);
                     currentAvatarBase64 = canvas.toDataURL('image/jpeg', 0.8);
@@ -361,14 +406,14 @@
             reader.readAsDataURL(file);
         });
 
-        // 5. 点击地图获取坐标
+        // 地图点击
         map.on('click', function(e) {
             selectedLatLng = e.latlng;
             latlngInput.value = `${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`;
             presetSelect.value = "";
         });
 
-        // 6. 预设选择
+        // 预设选择
         presetSelect.addEventListener('change', function() {
             if (this.value) {
                 const [lat, lng] = this.value.split(',').map(Number);
@@ -378,52 +423,74 @@
             }
         });
 
-        // 7. 添加标记
+        // 6. 添加或更新标记
         addBtn.addEventListener('click', function() {
-            if (!selectedLatLng) {
-                alert('请先在地图上点击位置，或选择预设！');
-                return;
-            }
+            if (!selectedLatLng) { alert('请先在地图上点击位置或选择预设！'); return; }
             const pcName = pcNameInput.value.trim();
-            if (!pcName) {
-                alert('请输入 PC 角色姓名！');
-                return;
+            if (!pcName) { alert('请输入 PC 角色姓名！'); return; }
+
+            if (editingId) {
+                // 编辑现有 Marker
+                const index = markersData.findIndex(m => m.id === editingId);
+                if (index !== -1) {
+                    markersData[index].lat = selectedLatLng.lat;
+                    markersData[index].lng = selectedLatLng.lng;
+                    markersData[index].pcName = pcName;
+                    markersData[index].playerName = playerNameInput.value.trim() || '未知玩家';
+                    markersData[index].desc = pcDescInput.value.trim();
+                    markersData[index].color = pinColorInput.value;
+                    if (currentAvatarBase64) markersData[index].avatar = currentAvatarBase64;
+                }
+            } else {
+                // 新增 Marker
+                const markerData = {
+                    id: Date.now(),
+                    lat: selectedLatLng.lat,
+                    lng: selectedLatLng.lng,
+                    pcName: pcName,
+                    playerName: playerNameInput.value.trim() || '未知玩家',
+                    desc: pcDescInput.value.trim(),
+                    color: pinColorInput.value,
+                    avatar: currentAvatarBase64
+                };
+                markersData.push(markerData);
             }
 
-            const markerData = {
-                id: Date.now(),
-                lat: selectedLatLng.lat,
-                lng: selectedLatLng.lng,
-                pcName: pcName,
-                playerName: playerNameInput.value.trim() || '未知玩家',
-                desc: pcDescInput.value.trim(),
-                color: pinColorInput.value,
-                avatar: currentAvatarBase64
-            };
-
-            markersData.push(markerData);
+            resetForm();
             saveAndRender();
-
-            // 重置表单
-            pcNameInput.value = '';
-            pcDescInput.value = '';
-            pcAvatarInput.value = '';
-            currentAvatarBase64 = '';
         });
 
-        // 8. 渲染与本地保存
+        cancelEditBtn.addEventListener('click', resetForm);
+
+        function resetForm() {
+            editingId = null;
+            addBtn.innerText = "添加标记";
+            cancelEditBtn.style.display = "none";
+            pcNameInput.value = '';
+            playerNameInput.value = '';
+            pcDescInput.value = '';
+            pcAvatarInput.value = '';
+            latlngInput.value = '';
+            selectedLatLng = null;
+            currentAvatarBase64 = '';
+        }
+
+        // 7. 保存并渲染主函数
         function saveAndRender() {
-            try {
-                localStorage.setItem('trpg_pc_markers', JSON.stringify(markersData));
-            } catch (e) {
-                alert("存储受限：上传图片过多，请清空部分标注后再试。");
+            if (currentUser) {
+                localStorage.setItem(`trpg_markers_${currentUser}`, JSON.stringify(markersData));
             }
 
-            markerInstances.forEach(m => map.removeLayer(m));
-            markerInstances = [];
+            // 清空旧数据
+            clusterGroup.clearLayers();
             pcListContainer.innerHTML = '';
 
+            const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24' fill='%23ccc'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
+
             markersData.forEach(data => {
+                const avatarSrc = data.avatar || defaultAvatar;
+
+                // 地图 Marker 渲染
                 const customIcon = L.divIcon({
                     className: '',
                     html: `<div class="custom-pin" style="background-color: ${data.color};"></div>`,
@@ -431,24 +498,21 @@
                     iconAnchor: [8, 8]
                 });
 
-                const marker = L.marker([data.lat, data.lng], { icon: customIcon }).addTo(map);
-                
-                const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24' fill='%23ccc'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
-                const avatarSrc = data.avatar || defaultAvatar;
-
+                const marker = L.marker([data.lat, data.lng], { icon: customIcon });
                 const popupContent = `
                     <div class="popup-card">
                         <img class="popup-avatar" src="${avatarSrc}" alt="Avatar">
                         <div class="popup-details">
-                            <strong style="font-size:15px; color:${data.color};">${data.pcName}</strong><br>
+                            <strong style="font-size:14px; color:${data.color};">${data.pcName}</strong><br>
                             <small><b>PL:</b> ${data.playerName}</small><br>
                             ${data.desc ? `<small><b>背景:</b> ${data.desc}</small>` : ''}
                         </div>
                     </div>
                 `;
                 marker.bindPopup(popupContent);
-                markerInstances.push(marker);
+                clusterGroup.addLayer(marker);
 
+                // 侧边栏列表生成
                 const item = document.createElement('div');
                 item.className = 'pc-item';
                 item.style.borderLeftColor = data.color;
@@ -458,13 +522,19 @@
                         <strong>${data.pcName}</strong>
                         <small style="color:#666;">PL: ${data.playerName}</small>
                     </div>
-                    <button onclick="deleteMarker(${data.id})">删除</button>
+                    <div class="pc-item-actions">
+                        <button class="btn-edit" onclick="editMarker(${data.id}, event)">编辑</button>
+                        <button class="btn-del" onclick="deleteMarker(${data.id}, event)">删除</button>
+                    </div>
                 `;
                 
+                // 点击列表跳转地图
                 item.addEventListener('click', (e) => {
-                    if(e.target.tagName !== 'BUTTON') {
+                    if (!e.target.tagName.matches('BUTTON')) {
                         map.flyTo([data.lat, data.lng], 5);
-                        marker.openPopup();
+                        clusterGroup.zoomToShowLayer(marker, () => {
+                            marker.openPopup();
+                        });
                     }
                 });
 
@@ -472,13 +542,37 @@
             });
         }
 
-        // 9. 删除标记
-        window.deleteMarker = function(id) {
-            markersData = markersData.filter(m => m.id !== id);
-            saveAndRender();
+        // 8. 编辑功能实现
+        window.editMarker = function(id, e) {
+            if (e) e.stopPropagation();
+            const data = markersData.find(m => m.id === id);
+            if (!data) return;
+
+            editingId = id;
+            selectedLatLng = { lat: data.lat, lng: data.lng };
+            latlngInput.value = `${data.lat.toFixed(4)}, ${data.lng.toFixed(4)}`;
+            pcNameInput.value = data.pcName;
+            playerNameInput.value = data.playerName;
+            pcDescInput.value = data.desc;
+            pinColorInput.value = data.color;
+
+            addBtn.innerText = "保存更新";
+            cancelEditBtn.style.display = "inline-block";
+            map.flyTo([data.lat, data.lng], 5);
         };
 
-        saveAndRender();
+        // 9. 删除功能
+        window.deleteMarker = function(id, e) {
+            if (e) e.stopPropagation();
+            if (confirm("确定要删除该 PC 的标注吗？")) {
+                markersData = markersData.filter(m => m.id !== id);
+                if (editingId === id) resetForm();
+                saveAndRender();
+            }
+        };
+
+        // 页面初始化触发认证检查
+        checkAuth();
     </script>
 </body>
 </html>

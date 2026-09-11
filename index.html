@@ -132,6 +132,12 @@
             flex: 1; background-color: #007bff; color: white; border: none;
             cursor: pointer; font-weight: bold; padding: 8px;
         }
+        button.export-btn {
+            background-color: #28a745; color: white; border: none;
+            cursor: pointer; font-weight: bold; padding: 8px; width: 100%;
+            margin-top: 5px; border-radius: 4px;
+        }
+        button.export-btn:hover { background-color: #218838; }
         button.cancel-btn {
             background-color: #6c757d; color: white; border: none;
             cursor: pointer; padding: 8px; display: none;
@@ -141,7 +147,7 @@
         #map {
             width: 100%; height: 100%;
             position: absolute; top: 0; left: 0; z-index: 1;
-            background-color: #aad3df; /* 兜底背景色（海洋蓝），防止网格黑屏或纯白 */
+            background-color: #aad3df;
         }
 
         .custom-pin {
@@ -151,7 +157,7 @@
 
         /* 侧边栏已标注列表 */
         .pc-list {
-            flex: 1; min-height: 150px; overflow-y: auto;
+            flex: 1; min-height: 120px; overflow-y: auto;
             border-top: 1px solid #ddd; padding-top: 8px;
         }
         .pc-item {
@@ -270,6 +276,8 @@
                 <button class="cancel-btn" id="cancel-edit-btn">取消编辑</button>
             </div>
 
+            <button class="export-btn" id="export-btn">📤 导出展示页面 (可单独分享)</button>
+
             <h3 style="font-size: 0.95rem; margin-top: 5px;">已标注列表</h3>
             <div class="pc-list" id="pc-list"></div>
         </div>
@@ -279,9 +287,8 @@
 
     <div id="map"></div>
 
-    <!-- 引入 Leaflet 核心库 -->
+    <!-- 引入 Leaflet 核心库与 MarkerCluster 聚合库 -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <!-- 引入 MarkerCluster 聚合点库 -->
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 
     <script>
@@ -292,7 +299,7 @@
         let currentAvatarBase64 = "";
         let markersData = [];
 
-        // DOM 元素引用
+        // DOM 引用
         const loginModal = document.getElementById('login-modal');
         const usernameInput = document.getElementById('username-input');
         const loginBtn = document.getElementById('login-btn');
@@ -310,9 +317,10 @@
         const pinColorInput = document.getElementById('pin-color');
         const addBtn = document.getElementById('add-btn');
         const cancelEditBtn = document.getElementById('cancel-edit-btn');
+        const exportBtn = document.getElementById('export-btn');
         const pcListContainer = document.getElementById('pc-list');
 
-        // 2. 初始化地图（修复核心：允许放大的最大视图为 10，但保留原始瓦片最高只取到 6，防止放大发白缺失）
+        // 2. 初始化地图
         const map = L.map('map', {
             minZoom: 2,
             maxZoom: 10
@@ -320,22 +328,21 @@
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             minZoom: 2,
-            maxZoom: 10,        // 允许地图最大可拉近放大的视图层级
-            maxNativeZoom: 6,   // 关键：告诉 Leaflet 瓦片图片最多只下载第 6 级，再放大直接拉伸图片而不会请求空图导致白屏！
+            maxZoom: 10,
+            maxNativeZoom: 6,
             detectRetina: true,
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
 
-        // 创建聚合点图层（解决重叠与自动散开）
         const clusterGroup = L.markerClusterGroup({
             maxClusterRadius: 35,
-            spiderfyOnMaxZoom: true,       // 到达最大放大层级时，点击多个同地点重叠标记会自动蛛网散开
-            disableClusteringAtZoom: 7,   // 到达 7 级放大后停止聚合，全部展现独立小点
+            spiderfyOnMaxZoom: true,
+            disableClusteringAtZoom: 7,
             showCoverageOnHover: false
         });
         map.addLayer(clusterGroup);
 
-        // 3. 登录 / 账号隔离体系
+        // 3. 登录认证
         function checkAuth() {
             if (currentUser) {
                 loginModal.style.display = 'none';
@@ -360,14 +367,13 @@
             checkAuth();
         });
 
-        // 4. 读取与保存特定用户的数据
         function loadUserData() {
             const key = `trpg_markers_${currentUser}`;
             markersData = JSON.parse(localStorage.getItem(key) || '[]');
             saveAndRender();
         }
 
-        // 5. 侧边栏折叠与平滑重繪
+        // 4. 动画与表格重绘
         toggleBtn.addEventListener('click', () => {
             sidebarContainer.classList.toggle('collapsed');
             const isCollapsed = sidebarContainer.classList.contains('collapsed');
@@ -381,7 +387,7 @@
             }, 35);
         });
 
-        // 头像文件处理
+        // 图片转换 Base64
         pcAvatarInput.addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (!file) return;
@@ -407,14 +413,13 @@
             reader.readAsDataURL(file);
         });
 
-        // 地图点击获取坐标
+        // 交互绑定
         map.on('click', function(e) {
             selectedLatLng = e.latlng;
             latlngInput.value = `${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`;
             presetSelect.value = "";
         });
 
-        // 预设选择跳转
         presetSelect.addEventListener('change', function() {
             if (this.value) {
                 const [lat, lng] = this.value.split(',').map(Number);
@@ -424,14 +429,13 @@
             }
         });
 
-        // 6. 添加或更新标记
+        // 5. 保存与修改
         addBtn.addEventListener('click', function() {
             if (!selectedLatLng) { alert('请先在地图上点击位置或选择预设！'); return; }
             const pcName = pcNameInput.value.trim();
             if (!pcName) { alert('请输入 PC 角色姓名！'); return; }
 
             if (editingId) {
-                // 编辑现有 Marker
                 const index = markersData.findIndex(m => m.id === editingId);
                 if (index !== -1) {
                     markersData[index].lat = selectedLatLng.lat;
@@ -443,7 +447,6 @@
                     if (currentAvatarBase64) markersData[index].avatar = currentAvatarBase64;
                 }
             } else {
-                // 新增 Marker
                 const markerData = {
                     id: Date.now(),
                     lat: selectedLatLng.lat,
@@ -476,7 +479,7 @@
             currentAvatarBase64 = '';
         }
 
-        // 7. 保存并渲染主函数
+        // 6. 保存与渲染
         function saveAndRender() {
             if (currentUser) {
                 localStorage.setItem(`trpg_markers_${currentUser}`, JSON.stringify(markersData));
@@ -490,7 +493,6 @@
             markersData.forEach(data => {
                 const avatarSrc = data.avatar || defaultAvatar;
 
-                // Marker 图标渲染
                 const customIcon = L.divIcon({
                     className: '',
                     html: `<div class="custom-pin" style="background-color: ${data.color};"></div>`,
@@ -512,7 +514,6 @@
                 marker.bindPopup(popupContent);
                 clusterGroup.addLayer(marker);
 
-                // 侧边栏列表项目生成
                 const item = document.createElement('div');
                 item.className = 'pc-item';
                 item.style.borderLeftColor = data.color;
@@ -528,7 +529,6 @@
                     </div>
                 `;
                 
-                // 点击卡片平滑跳转到 Marker，若有重叠聚合点会自动展开放大
                 item.addEventListener('click', (e) => {
                     if (!e.target.tagName.matches('BUTTON')) {
                         clusterGroup.zoomToShowLayer(marker, () => {
@@ -541,7 +541,7 @@
             });
         }
 
-        // 8. 编辑功能
+        // 7. 编辑/删除
         window.editMarker = function(id, e) {
             if (e) e.stopPropagation();
             const data = markersData.find(m => m.id === id);
@@ -560,7 +560,6 @@
             map.flyTo([data.lat, data.lng], 5);
         };
 
-        // 9. 删除功能
         window.deleteMarker = function(id, e) {
             if (e) e.stopPropagation();
             if (confirm("确定要删除该 PC 的标注吗？")) {
@@ -570,7 +569,122 @@
             }
         };
 
-        // 初始化验证
+        // 8. 核心导出功能：生成纯静态展示 HTML 文件
+        exportBtn.addEventListener('click', () => {
+            if (markersData.length === 0) {
+                alert('还没有添加任何 PC 标注，请添加后再导出！');
+                return;
+            }
+
+            const exportTitle = `${currentUser}的跑团PC出身地展示地图`;
+            const staticHTML = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${exportTitle}</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; height: 100vh; width: 100vw; overflow: hidden; position: relative; }
+        #sidebar-container { position: absolute; top: 0; left: 0; bottom: 0; z-index: 1000; display: flex; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        #sidebar-container.collapsed { transform: translateX(-300px); }
+        #sidebar { width: 300px; height: 100%; background-color: #f8f9fa; border-right: 1px solid #dee2e6; padding: 15px; display: flex; flex-direction: column; gap: 10px; box-shadow: 2px 0 5px rgba(0,0,0,0.1); overflow-y: auto; }
+        #toggle-btn { position: absolute; right: -32px; top: 15px; width: 32px; height: 40px; background: #f8f9fa; border: 1px solid #dee2e6; border-left: none; border-radius: 0 6px 6px 0; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #495057; box-shadow: 3px 0 5px rgba(0,0,0,0.1); z-index: 1001; }
+        #map { width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1; background-color: #aad3df; }
+        .custom-pin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 4px rgba(0,0,0,0.5); }
+        .pc-list { flex: 1; overflow-y: auto; margin-top: 10px; }
+        .pc-item { background: white; padding: 8px; margin-bottom: 8px; border-radius: 4px; border-left: 4px solid #007bff; display: flex; align-items: center; gap: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); cursor: pointer; }
+        .pc-item-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; border: 1px solid #ddd; flex-shrink: 0; }
+        .pc-item-info { flex: 1; min-width: 0; }
+        .pc-item-info strong { display: block; font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .popup-card { display: flex; gap: 8px; align-items: flex-start; min-width: 160px; }
+        .popup-avatar { width: 45px; height: 45px; border-radius: 4px; object-fit: cover; border: 1px solid #ccc; }
+        .popup-details { flex: 1; font-size: 0.8rem; }
+    </style>
+</head>
+<body>
+    <div id="sidebar-container">
+        <div id="sidebar">
+            <h2 style="font-size:1.1rem; color:#333;">🎲 PC 出身地地图展示</h2>
+            <p style="font-size:0.8rem; color:#666;">用户 <b>${currentUser}</b> 分享的跑团角色列表：</p>
+            <div class="pc-list" id="pc-list"></div>
+        </div>
+        <button id="toggle-btn">◀</button>
+    </div>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"><\/script>
+    <script>
+        const markersData = ${JSON.stringify(markersData)};
+        const map = L.map('map', { minZoom: 2, maxZoom: 10 }).setView([35.0, 105.0], 4);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { minZoom: 2, maxZoom: 10, maxNativeZoom: 6, detectRetina: true, attribution: '&copy; OpenStreetMap' }).addTo(map);
+        const clusterGroup = L.markerClusterGroup({ maxClusterRadius: 35, spiderfyOnMaxZoom: true, disableClusteringAtZoom: 7, showCoverageOnHover: false });
+        map.addLayer(clusterGroup);
+
+        const sidebarContainer = document.getElementById('sidebar-container');
+        const toggleBtn = document.getElementById('toggle-btn');
+        toggleBtn.addEventListener('click', () => {
+            sidebarContainer.classList.toggle('collapsed');
+            toggleBtn.innerText = sidebarContainer.classList.contains('collapsed') ? '▶' : '◀';
+            let checks = 0;
+            const timer = setInterval(() => { map.invalidateSize(); checks++; if (checks > 10) clearInterval(timer); }, 35);
+        });
+
+        const pcListContainer = document.getElementById('pc-list');
+        const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24' fill='%23ccc'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
+
+        markersData.forEach(data => {
+            const avatarSrc = data.avatar || defaultAvatar;
+            const customIcon = L.divIcon({ className: '', html: \`<div class="custom-pin" style="background-color: \${data.color};"></div>\`, iconSize: [16, 16], iconAnchor: [8, 8] });
+            const marker = L.marker([data.lat, data.lng], { icon: customIcon });
+            marker.bindPopup(\`
+                <div class="popup-card">
+                    <img class="popup-avatar" src="\${avatarSrc}" alt="Avatar">
+                    <div class="popup-details">
+                        <strong style="font-size:14px; color:\${data.color};">\${data.pcName}</strong><br>
+                        <small><b>PL:</b> \${data.playerName}</small><br>
+                        \${data.desc ? \`<small><b>背景:</b> \${data.desc}</small>\` : ''}
+                    </div>
+                </div>
+            \`);
+            clusterGroup.addLayer(marker);
+
+            const item = document.createElement('div');
+            item.className = 'pc-item';
+            item.style.borderLeftColor = data.color;
+            item.innerHTML = \`
+                <img class="pc-item-avatar" src="\${avatarSrc}" alt="avatar">
+                <div class="pc-item-info">
+                    <strong>\${data.pcName}</strong>
+                    <small style="color:#666;">PL: \${data.playerName}</small>
+                </div>
+            \`;
+            item.addEventListener('click', () => {
+                clusterGroup.zoomToShowLayer(marker, () => { marker.openPopup(); });
+            });
+            pcListContainer.appendChild(item);
+        });
+    <\/script>
+</body>
+</html>`;
+
+            // 创建并触发出下载链接
+            const blob = new Blob([staticHTML], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${exportTitle}.html`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+
+        // 验证初始化
         checkAuth();
     </script>
 </body>
